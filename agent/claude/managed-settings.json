@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "defaultMode": "bypassPermissions"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash|WebFetch|WebSearch",
+        "hooks": [{ "type": "command", "command": "/usr/local/bin/agentgw-hook", "timeout": 10 }]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "matcher": "Bash|WebFetch|WebSearch",
+        "hooks": [{ "type": "command", "command": "/usr/local/bin/agentgw-hook", "timeout": 10 }]
+      }
+    ]
+  }
+}

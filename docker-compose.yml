@@ -1,0 +1,72 @@
+# agentgw: egress gateway for Docker AI-agent containers.
+#
+# Prerequisite (once): ./scripts/setup.sh  - creates the agents network and .env
+# Then:                docker compose up -d --build
+#
+# Agent containers join the agents network (only that network) with
+# `dns: [172.30.0.1]`; see README "Onboarding agent containers".
+
+name: agentgw
+
+x-common: &common
+  build: .
+  image: agentgw:local
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  read_only: true
+  tmpfs: [/tmp]
+  security_opt: [no-new-privileges:true]
+  volumes:
+    - agentgw-data:/var/lib/agentgw
+
+services:
+  # Privileged half: nftables, DNS, conntrack. Host network namespace because
+  # it filters the host's forward/input paths and listens on the bridge IP.
+  # No web interface. Stopping it leaves the last applied rules in force.
+  gateway:
+    <<: *common
+    command: ["python3", "-m", "agentgw.gateway"]
+    network_mode: host
+    cap_drop: [ALL]
+    cap_add: [NET_ADMIN, NET_BIND_SERVICE]
+    volumes:
+      - agentgw-data:/var/lib/agentgw
+      - agentgw-docker:/run/agentgw-docker
+
+  # Unprivileged half: dashboard (127.0.0.1:8080 by default) and the agent
+  # API on the bridge IP. No capabilities at all.
+  controller:
+    <<: *common
+    command: ["python3", "-m", "agentgw.web"]
+    network_mode: host
+    cap_drop: [ALL]
+    depends_on: [gateway]
+
+  # Read-only Docker metadata for container attribution: GET on the agents
+  # network and container inspect only, served on a unix socket that only the
+  # gateway mounts. The Docker socket itself is mounted nowhere else.
+  socket-proxy:
+    # wollomatic/socket-proxy 1.x, pinned by digest.
+    image: wollomatic/socket-proxy@sha256:ff95d6ff6c27853005ef85eb8f4ab5923dc3d2f1e055f98fb6aeeaceec3fe848
+    restart: unless-stopped
+    network_mode: none
+    user: "65534:${DOCKER_GID:-999}"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    command:
+      - -proxysocketendpoint=/run/agentgw-docker/docker.sock
+      - -proxysocketendpointfilemode=0666
+      - -allowGET=(/v[0-9.]+)?/(networks/${AGENTGW_NETWORK:-agentgw-agents}|containers/[a-zA-Z0-9_.-]+/json)
+      - -loglevel=WARN
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - agentgw-docker:/run/agentgw-docker
+    # The gateway makes the shared socket directory writable for this uid.
+    depends_on: [gateway]
+
+volumes:
+  agentgw-data:
+  agentgw-docker:

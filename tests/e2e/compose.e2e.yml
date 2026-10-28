@@ -1,0 +1,10 @@
+# Overrides for the end-to-end test: upstream DNS is the simulated internet's
+# resolver, and the gateway polls counters faster.
+services:
+  gateway:
+    environment:
+      AGENTGW_UPSTREAM_DNS: 203.0.113.53
+      AGENTGW_POLL_INTERVAL: "1"
+  controller:
+    environment:
+      AGENTGW_UPSTREAM_DNS: 203.0.113.53

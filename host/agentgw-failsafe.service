@@ -1,0 +1,16 @@
+[Unit]
+Description=agentgw: fail-closed egress for the agents bridge until the gateway starts
+Documentation=file:///opt/agentgw/README.md
+DefaultDependencies=no
+# After a distribution firewall service (which may flush the ruleset), before Docker.
+After=nftables.service
+Before=docker.service network-pre.target
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/agentgw/failsafe.nft
+
+[Install]
+WantedBy=multi-user.target
