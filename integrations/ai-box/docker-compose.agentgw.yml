@@ -1,0 +1,42 @@
+# Compose override that puts the ai-box containers behind agentgw.
+# In ai-box's .env:
+#   AGENTGW_DIR=/opt/network-layer          # where this repository is checked out
+#   COMPOSE_FILE=docker-compose.yml:/opt/network-layer/integrations/ai-box/docker-compose.agentgw.yml
+# then: ./box up -d --force-recreate   (one-time recreate: new network + DNS)
+#
+# Each box joins ONLY the agents network (listing `networks:` replaces the
+# compose default network) and resolves through the gateway. The mounts add
+# the agent tools and replace the managed agent settings with versions that
+# keep ai-box's settings and add the gateway hook.
+
+x-agentgw-net: &agentgw-net
+  networks: [agentgw]
+  dns: [172.30.0.1]
+
+services:
+  claude:
+    <<: *agentgw-net
+    volumes:
+      - ${AGENTGW_DIR:?set AGENTGW_DIR}/agent/agentgw-net:/usr/local/bin/agentgw-net:ro
+      - ${AGENTGW_DIR}/agent/agentgw-hook:/usr/local/bin/agentgw-hook:ro
+      - ${AGENTGW_DIR}/agent/claude/managed-settings.json:/etc/claude-code/managed-settings.json:ro
+
+  codex:
+    <<: *agentgw-net
+    volumes:
+      - ${AGENTGW_DIR:?set AGENTGW_DIR}/agent/agentgw-net:/usr/local/bin/agentgw-net:ro
+      - ${AGENTGW_DIR}/agent/agentgw-hook:/usr/local/bin/agentgw-hook:ro
+      - ${AGENTGW_DIR}/agent/codex/managed_config.toml:/etc/codex/managed_config.toml:ro
+
+  box:
+    <<: *agentgw-net
+    volumes:
+      - ${AGENTGW_DIR:?set AGENTGW_DIR}/agent/agentgw-net:/usr/local/bin/agentgw-net:ro
+      - ${AGENTGW_DIR}/agent/agentgw-hook:/usr/local/bin/agentgw-hook:ro
+      - ${AGENTGW_DIR}/agent/claude/managed-settings.json:/etc/claude-code/managed-settings.json:ro
+      - ${AGENTGW_DIR}/agent/codex/managed_config.toml:/etc/codex/managed_config.toml:ro
+
+networks:
+  agentgw:
+    external: true
+    name: agentgw-agents

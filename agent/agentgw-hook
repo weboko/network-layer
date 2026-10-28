@@ -1,0 +1,48 @@
+#!/bin/sh
+# PostToolUse / PostToolUseFailure hook for Claude Code and Codex.
+#
+# After a tool call, asks the gateway which destinations it blocked for this
+# container since the previous call in this session and, if there are new
+# ones, hands the agent that list plus what to do about it (as
+# hookSpecificOutput.additionalContext, which both agents add to the model's
+# context). It never blocks the tool or the agent, and stays silent when the
+# gateway API is unreachable. Needs sh, curl, sed, awk.
+API="${AGENTGW_API:-http://172.30.0.1:8081}"
+input=$(cat)
+
+field() { printf '%s' "$input" | sed -n "s/.*\"$1\" *: *\"\([^\"]*\)\".*/\1/p" | head -n 1; }
+event=$(field hook_event_name)
+case "$event" in PostToolUse|PostToolUseFailure) ;; *) event=PostToolUse ;; esac
+sid=$(field session_id | tr -cd 'A-Za-z0-9_.-')
+state="${TMPDIR:-/tmp}/agentgw-hook-${sid:-default}"
+
+now=$(date +%s)
+since=$((now - 120))
+[ -f "$state" ] && since=$(($(head -n 1 "$state") - 5))
+
+# Rejected connections reach the gateway's records with its counter poll
+# (~2 s). When the tool output looks like a network failure, give it that long.
+if printf '%s' "$input" | grep -Eqi \
+  'resolve host|name or service not known|temporary failure in name resolution|nxdomain|getaddrinfo|ENOTFOUND|EAI_AGAIN|connection refused|ECONNREFUSED|connection reset|ECONNRESET|couldn.t connect'; then
+  sleep 2.5
+fi
+blocked=$(curl -fsS --max-time 2 "$API/v1/blocked?since=$since&format=text" 2>/dev/null) || exit 0
+[ "$blocked" = "no blocked destinations" ] && { echo "$now" > "$state"; exit 0; }
+
+# Report each destination once per session (state file: timestamp, then names).
+new=$(printf '%s\n' "$blocked" | awk -F '\t' -v f="$state" '
+  BEGIN { while ((getline l < f) > 0) seen[l] = 1 }
+  NF >= 3 && !($1 in seen) { print }')
+{ echo "$now"; [ -f "$state" ] && tail -n +2 "$state"; printf '%s\n' "$new" | cut -f1; } > "$state.tmp" && mv "$state.tmp" "$state"
+[ -n "$new" ] || exit 0
+
+list=$(printf '%s\n' "$new" | awk -F '\t' '{ printf "- %s (ports: %s) - %s, %s\n", $1, $2, $3, $4 }')
+msg="agentgw network gateway: these destinations were just blocked for this container:
+$list
+This is network policy, not a transient error: retrying or switching tools will not help, and do not try to reach the same resource another way (other mirrors, raw IPs, proxies, DNS-over-HTTPS).
+For each one decide whether the task really needs it.
+- Optional: continue without it and list it as blocked in your final answer.
+- Required: run agentgw-net request <host> --required --reason \"<what the task needs it for>\" [--port tcp/443], keep doing all work that does not depend on it, then run agentgw-net wait <host> --timeout 110 (repeat while it prints pending) before the step that needs it. approved: retry. denied: finish without it and report."
+
+esc=$(printf '%s' "$msg" | awk 'BEGIN { ORS = "" } { gsub(/\\/, "\\\\"); gsub(/"/, "\\\""); gsub(/\t/, " "); if (NR > 1) print "\\n"; print }')
+printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$event" "$esc"

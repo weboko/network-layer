@@ -1,0 +1,83 @@
+#!/bin/sh
+# agentgw-net: what the network gateway blocked for this container, and asking
+# the operator for access. Needs only sh and curl. Requests never grant access
+# by themselves; a human approves or blocks them in the dashboard.
+#
+#   agentgw-net blocked [--since SECONDS]          recent blocks (default: last hour)
+#   agentgw-net check DEST [PORT]                   approved | pending | denied
+#   agentgw-net request DEST --required|--optional --reason TEXT [--port tcp/443] [--task NAME]
+#   agentgw-net wait DEST [--port PORT] [--timeout SECONDS]   (default 300, max 600)
+#
+# Exit codes for check/wait: 0 approved, 3 denied, 4 pending, 1 error.
+set -u
+API="${AGENTGW_API:-http://172.30.0.1:8081}"
+
+die() { echo "agentgw-net: $*" >&2; exit 1; }
+json_str() { printf '%s' "$1" | tr '\n\t' '  ' | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+urlenc() { printf '%s' "$1" | sed 's/%/%25/g; s/ /%20/g; s/&/%26/g; s/?/%3F/g; s/#/%23/g; s/+/%2B/g; s|/|%2F|g'; }
+status_exit() {
+  case "$1" in
+    approved) exit 0 ;; denied) exit 3 ;; pending) exit 4 ;; *) exit 1 ;;
+  esac
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+case "$cmd" in
+  blocked)
+    since=3600
+    [ "${1:-}" = "--since" ] && since="${2:?--since needs seconds}"
+    now=$(date +%s)
+    curl -fsS --max-time 10 "$API/v1/blocked?since=$((now - since))&format=text" || die "gateway API unreachable at $API"
+    ;;
+  check)
+    dest="${1:?usage: agentgw-net check DEST [PORT]}"
+    q="dest=$(urlenc "$dest")"
+    [ -n "${2:-}" ] && q="$q&port=$(urlenc "$2")"
+    st=$(curl -fsS --max-time 10 "$API/v1/check?$q&format=text") || die "gateway API unreachable at $API"
+    echo "$st"
+    status_exit "$st"
+    ;;
+  request)
+    dest="${1:?usage: agentgw-net request DEST --required|--optional --reason TEXT}"
+    shift
+    nec="" reason="" port="" task=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --required) nec=required ;;
+        --optional) nec=optional ;;
+        --reason) reason="${2:?}"; shift ;;
+        --port) port="${2:?}"; shift ;;
+        --task) task="${2:?}"; shift ;;
+        *) die "unknown option $1" ;;
+      esac
+      shift
+    done
+    [ -n "$nec" ] || die "say whether the destination is --required or --optional"
+    [ -n "$reason" ] || die "--reason is required: one sentence on what the task needs it for"
+    body="{\"dest\":\"$(json_str "$dest")\",\"necessity\":\"$nec\",\"reason\":\"$(json_str "$reason")\",\"port\":\"$(json_str "$port")\",\"task\":\"$(json_str "$task")\"}"
+    curl -fsS --max-time 10 -H 'Content-Type: application/json' -d "$body" "$API/v1/request" || die "request failed"
+    echo
+    ;;
+  wait)
+    dest="${1:?usage: agentgw-net wait DEST [--port PORT] [--timeout SECONDS]}"
+    shift
+    timeout=300 port=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --timeout) timeout="${2:?}"; shift ;;
+        --port) port="${2:?}"; shift ;;
+        *) die "unknown option $1" ;;
+      esac
+      shift
+    done
+    q="dest=$(urlenc "$dest")&timeout=$timeout"
+    [ -n "$port" ] && q="$q&port=$(urlenc "$port")"
+    st=$(curl -fsS --max-time $((timeout + 15)) "$API/v1/wait?$q&format=text") || die "gateway API unreachable at $API"
+    echo "$st"
+    status_exit "$st"
+    ;;
+  *)
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+esac

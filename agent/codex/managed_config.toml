@@ -1,0 +1,17 @@
+# /etc/codex/managed_config.toml
+# Hooks in this managed layer run without the per-user /hooks trust step
+# (codex-rs hooks/src/engine/discovery.rs: LegacyManagedConfigTomlFromFile is managed).
+# Codex reports its shell tool to hooks as "Bash" (core/src/tools/hook_names.rs).
+# There is no separate failure event: with the default unified exec tool,
+# PostToolUse also fires for commands that exit non-zero
+# (ExecCommandToolOutput::success_for_logging is always true).
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[[hooks.PostToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = "/usr/local/bin/agentgw-hook"
+timeout = 10

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>agentgw</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1>agentgw</h1>
+  <span id="mode" class="badge">…</span>
+  <span id="gw" class="muted"></span>
+  <nav>
+    <button data-tab="activity" class="tab active">Activity</button>
+    <button data-tab="queue" class="tab">Review queue <span id="qcount" class="count"></span></button>
+    <button data-tab="rules" class="tab">Whitelist</button>
+    <button data-tab="history" class="tab">History</button>
+    <button data-tab="snapshots" class="tab">Snapshots</button>
+    <button data-tab="settings" class="tab">Settings</button>
+  </nav>
+</header>
+<div id="banner"></div>
+<div id="toast"></div>
+<main>
+  <section id="tab-activity">
+    <div class="toolbar">
+      <input id="q" placeholder="filter hostname / IP">
+      <select id="hours">
+        <option value="1">last hour</option><option value="24" selected>last 24h</option>
+        <option value="168">last 7 days</option><option value="720">last 30 days</option>
+      </select>
+      <select id="statusf">
+        <option value="">all statuses</option><option value="unreviewed">unreviewed</option>
+        <option value="partial">partially approved</option><option value="approved">approved</option>
+        <option value="denied">blocked</option>
+      </select>
+      <button id="bulk-approve" class="approve">Approve selected</button>
+    </div>
+    <table>
+      <thead><tr><th><input type="checkbox" id="selall"></th><th>Destination</th><th>Country / network</th>
+        <th>Ports</th><th>Conns</th><th>Blocked</th><th>Traffic</th><th>Containers</th><th>Risk</th>
+        <th>Status</th><th>Last seen</th><th></th></tr></thead>
+      <tbody id="activity"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-queue" hidden>
+    <p class="muted">Destinations that were blocked or requested by an agent and have no decision yet.
+      Agent-provided reasons are claims made by the agent, not verified facts.</p>
+    <div id="queue"></div>
+  </section>
+
+  <section id="tab-rules" hidden>
+    <form id="addrule" class="toolbar">
+      <select name="action"><option value="allow">allow</option><option value="deny">block</option></select>
+      <input name="value" placeholder="host, *.domain or IP/CIDR" required>
+      <input name="ports" placeholder="ports: tcp/443, udp/443 or *" value="tcp/443">
+      <input name="expires_hours" placeholder="temporary: hours" size="12">
+      <input name="note" placeholder="note">
+      <button class="approve">Add</button>
+    </form>
+    <table>
+      <thead><tr><th>Action</th><th>Destination</th><th>Ports</th><th>Note</th><th>Expires</th>
+        <th>By</th><th>Updated</th><th></th></tr></thead>
+      <tbody id="rules"></tbody>
+    </table>
+  </section>
+
+  <section id="tab-history" hidden>
+    <table><thead><tr><th>Time</th><th>Actor</th><th>Event</th><th>Destination</th><th>Details</th></tr></thead>
+      <tbody id="history"></tbody></table>
+  </section>
+
+  <section id="tab-snapshots" hidden>
+    <form id="snapform" class="toolbar">
+      <input name="name" placeholder="snapshot name" required>
+      <input name="note" placeholder="note">
+      <button>Save snapshot of current whitelist</button>
+    </form>
+    <div class="toolbar">
+      <button id="export">Export current policy (YAML)</button>
+      <label class="file">Import YAML <input type="file" id="importfile" accept=".yaml,.yml,text/yaml"></label>
+      <select id="importmode"><option value="replace">replace whitelist</option><option value="merge">merge into whitelist</option></select>
+    </div>
+    <table><thead><tr><th>Name</th><th>Rules</th><th>Saved</th><th>Note</th><th></th></tr></thead>
+      <tbody id="snapshots"></tbody></table>
+  </section>
+
+  <section id="tab-settings" hidden>
+    <form id="settings" class="settings"></form>
+    <h3>Threat intelligence sources</h3>
+    <div id="intelstatus"></div>
+    <button id="intelrefresh">Refresh feeds now</button>
+  </section>
+</main>
+
+<footer class="muted">Country and ASN data: <a href="https://db-ip.com">IP Geolocation by DB-IP</a> (CC BY 4.0), when GeoIP is enabled.</footer>
+
+<aside id="detail" hidden>
+  <button id="closedetail" class="close">×</button>
+  <div id="detailbody"></div>
+</aside>
+<script src="/static/app.js"></script>
+</body>
+</html>
